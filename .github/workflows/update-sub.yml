@@ -1,0 +1,50 @@
+name: Update Subscription
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"  # 每6小时运行
+  workflow_dispatch:  # 支持手动触发
+
+jobs:
+  update-sub:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Download new subscription
+      run: |
+        mkdir -p data
+        curl -fsSL "$SUB_URL" -o data/sub_new.txt
+      env:
+        SUB_URL: ${{ secrets.SUB_URL }}
+
+    - name: Compare with old version
+      id: compare
+      run: |
+        if [ ! -f data/sub.txt ]; then
+          echo "no previous file" > /tmp/diff
+        else
+          diff -q data/sub.txt data/sub_new.txt > /tmp/diff || true
+        fi
+
+        if [ -s /tmp/diff ]; then
+          echo "changed=true" >> $GITHUB_OUTPUT
+        else
+          echo "changed=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Commit and Push changes
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        mv data/sub_new.txt data/sub.txt
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add data/sub.txt
+        git commit -m "Update subscription $(date '+%Y-%m-%d %H:%M:%S')"
+        git push
+
+    - name: No changes detected
+      if: steps.compare.outputs.changed == 'false'
+      run: echo "No changes in subscription file, skipping commit."
